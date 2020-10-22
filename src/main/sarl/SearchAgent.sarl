@@ -1,0 +1,134 @@
+/** 
+ * 
+ */
+
+import io.sarl.core.AgentKilled
+import io.sarl.core.AgentSpawned
+import io.sarl.core.Destroy
+import io.sarl.core.Initialize
+import io.sarl.core.InnerContextAccess
+import io.sarl.core.Lifecycle
+import io.sarl.core.Logging
+import java.io.File
+import java.util.ArrayList
+import java.util.HashMap
+import java.util.List
+import java.util.UUID
+
+/** 
+ * @author Mehdi
+ * 
+ */
+agent SearchAgent {
+	uses Logging, Lifecycle, InnerContextAccess
+	
+	var childrenAgents : List<UUID> = new ArrayList<UUID>()
+	var searchRequestsLog : HashMap<UUID, SearchRequest> = new HashMap<UUID, SearchRequest>()
+	
+	
+	on Initialize {
+		info("Search agent was started.")
+	}
+
+	on Destroy {
+		info("Search agent was stopped.")
+	}
+	
+	@SuppressWarnings("discouraged_occurrence_readonly_use")
+	on SearchRequest {
+		loggingName = "SearchAgent in " + occurrence.path
+		info("Search request received --> Search path : " + occurrence.path + " Search query : " + occurrence.query)
+		
+		//	Contains the parent address
+		var parentAddress = occurrence.source
+		
+		var directory = new File(occurrence.path)
+		
+		// if the current path references a directory, search for potential file matches inside
+		if (directory.isDirectory)
+		{
+			//	Gets the list of files inside the selected directory
+			var list = directory.listFiles();
+			
+			//	if the list isn't empty, search for a match
+			if(list !== null)
+			{
+				// Iterate through the list of files
+				for(var i= 0; i < list.length; i++)
+				{
+					//	if the current file is a directory, spawn a child agent 
+					//  who will be reponsible to search inside it
+					if(list.get(i).isDirectory)
+					{
+						// generates a random ID
+						var targetID = UUID.randomUUID
+						
+						//	Keep track of the child agent's ID
+						this.childrenAgents.add(targetID)
+						
+						// Spawn the child agent in the current agent context
+						SearchAgent.spawnInContextWithID(targetID, innerContext)
+						
+						//	Create a search request targeting the directory
+						var searchEvent = new SearchRequest(list.get(i).absoluteFile.toString, occurrence.query)
+
+						// Saves the agent UUID and his corresponding search request instance
+						// to be launched after the agent launches
+						this.searchRequestsLog.put(targetID, searchEvent)					
+					} 
+					// if the file is of type file and not a directory
+					else 
+					{
+						if (list.get(i).absoluteFile.toString.contains(occurrence.query))
+						{
+							innerContext.defaultSpace.emit(ID, new FileFound(list.get(i).absoluteFile.toString,ID)) [
+								it.UUID == parentAddress.UUID
+							]
+							error("File found " + list.get(i).absoluteFile.toString)
+						}
+					}
+				}
+
+				innerContext.defaultSpace.emit(ID, new SearchFinished(ID)) [
+					it.UUID == parentAddress.UUID
+				]
+			}
+			
+		}
+	}
+
+	on AgentSpawned {
+		val agentId = occurrence.agentID
+		
+		try
+		{
+			val searchRequest = this.searchRequestsLog.get(agentId)
+			innerContext.defaultSpace.emit(ID, searchRequest)[it.UUID == agentId]
+		}
+		catch(e : Exception)
+		{
+			//	e.info()
+		}
+		
+	}
+
+	on AgentKilled {		
+		if(!hasMemberAgent) killMe
+	}
+	
+	on FileFound
+	{
+		error("File found " + occurrence.path)
+	}
+
+	on SearchFinished
+	{
+		info("---->" + occurrence)
+
+		// Remove the child agent record
+		this.childrenAgents.remove(occurrence.agentId)
+		
+		//	If no child agents are left, kill the agent
+		if(this.childrenAgents.isEmpty) killMe
+	}
+}

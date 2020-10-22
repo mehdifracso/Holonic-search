@@ -1,0 +1,37 @@
+import java.util.UUID
+
+/** 
+ * 
+ */
+
+/** 
+ * @author Mehdi
+ * 
+ */
+event SearchRequest {
+	val path : String
+	val query : String
+	
+	new (path : String, query: String) 
+	{
+		this.path = path
+		this.query = query
+	}
+}
+
+event FileFound {
+	val path : String
+	val agentId : UUID
+
+	new (path : String, agentId : UUID) {
+		this.agentId = agentId
+		this.path = path
+	}
+}
+
+event SearchFinished {
+	val agentId: UUID
+	new (agentId : UUID) {
+		this.agentId = agentId
+	}
+}
